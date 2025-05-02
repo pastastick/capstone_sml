@@ -1,0 +1,13 @@
+numpy
+pandas
+scikit-learn
+torch
+tqdm
+openvino-dev
+torchvision
+albumentations
+datasets
+pillow
+matplotlib
+seaborn
+streamlit
