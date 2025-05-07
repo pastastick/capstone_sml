@@ -50,8 +50,44 @@ def compute_pixelwise_retrieval_metrics(anomaly_segmentations, ground_truth_mask
     return {"auroc": auroc, "ap": ap}
 
 
+# def compute_pro(masks, amaps, num_th=200):
+#     df = pd.DataFrame([], columns=["pro", "fpr", "threshold"])
+#     binary_amaps = np.zeros_like(amaps, dtype=bool)
+
+#     min_th = amaps.min()
+#     max_th = amaps.max()
+#     delta = (max_th - min_th) / num_th
+
+#     k = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+#     for th in np.arange(min_th, max_th, delta):
+#         binary_amaps[amaps <= th] = 0
+#         binary_amaps[amaps > th] = 1
+
+#         pros = []
+#         for binary_amap, mask in zip(binary_amaps, masks):
+#             binary_amap = cv2.dilate(binary_amap.astype(np.uint8), k)
+#             for region in measure.regionprops(measure.label(mask)):
+#                 axes0_ids = region.coords[:, 0]
+#                 axes1_ids = region.coords[:, 1]
+#                 tp_pixels = binary_amap[axes0_ids, axes1_ids].sum()
+#                 pros.append(tp_pixels / region.area)
+
+#         inverse_masks = 1 - masks
+#         fp_pixels = np.logical_and(inverse_masks, binary_amaps).sum()
+#         fpr = fp_pixels / inverse_masks.sum()
+
+#         df = pd.concat([df, pd.DataFrame({"pro": np.mean(pros), "fpr": fpr, "threshold": th}, index=[0])])
+
+#     df = df[df["fpr"] < 0.3]
+#     df["fpr"] = (df["fpr"] - df["fpr"].min()) / (df["fpr"].max() - df["fpr"].min() + 1e-10)
+
+#     pro_auc = metrics.auc(df["fpr"], df["pro"])
+#     return pro_auc
+
 def compute_pro(masks, amaps, num_th=200):
-    df = pd.DataFrame([], columns=["pro", "fpr", "threshold"])
+    # Inisialisasi list untuk menyimpan data sementara
+    data = []
+    
     binary_amaps = np.zeros_like(amaps, dtype=bool)
 
     min_th = amaps.min()
@@ -76,10 +112,19 @@ def compute_pro(masks, amaps, num_th=200):
         fp_pixels = np.logical_and(inverse_masks, binary_amaps).sum()
         fpr = fp_pixels / inverse_masks.sum()
 
-        df = pd.concat([df, pd.DataFrame({"pro": np.mean(pros), "fpr": fpr, "threshold": th}, index=[0])])
+        # Pastikan pros tidak kosong sebelum menghitung mean
+        pro_mean = np.mean(pros) if pros else 0.0
+        # Tambahkan data ke list
+        data.append({"pro": pro_mean, "fpr": fpr, "threshold": th})
 
+    # Buat DataFrame dari list data
+    df = pd.DataFrame(data)
+
+    # Filter berdasarkan fpr < 0.3
     df = df[df["fpr"] < 0.3]
+    # Normalisasi fpr
     df["fpr"] = (df["fpr"] - df["fpr"].min()) / (df["fpr"].max() - df["fpr"].min() + 1e-10)
 
+    # Hitung AUC
     pro_auc = metrics.auc(df["fpr"], df["pro"])
     return pro_auc

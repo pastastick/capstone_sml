@@ -10,4 +10,7 @@ datasets
 pillow
 matplotlib
 seaborn
+timm
+scikit-image
 streamlit
+tensorboard
