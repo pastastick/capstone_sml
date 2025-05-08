@@ -137,3 +137,8 @@ Thumbs.db
 
 # Ignore all tempDir files from Streamlit
 tempDir/
+
+# ignore output folder
+scores/
+dataset/
+visualization/
