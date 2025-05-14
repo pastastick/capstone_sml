@@ -168,6 +168,8 @@ def inference_openvino_modif(image_path, category):
     # Inisialisasi OpenVINO
     core = ov.Core()
     # root = os.getcwd()
+    # print(f"path model= ckpt/openvino_models/{category}.xml")
+    # print(f"path image= {image_path}")
     compiled_model = core.compile_model(f"ckpt/openvino_models/{category}.xml", "CPU")
     infer_request = compiled_model.create_infer_request()
 
