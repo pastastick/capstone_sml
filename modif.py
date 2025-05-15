@@ -348,7 +348,7 @@ class GLASS(torch.nn.Module):
                 self.load_state_dict(state_dict, strict=False)
 
             images, scores, segmentations, labels_gt, masks_gt = self.predict(test_data)
-            image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro = self._evaluate(
+            image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, pr, re, ac, f1, th = self._evaluate(
                 images, scores, segmentations, labels_gt, masks_gt, name, path='eval'
             )
             epoch = int(ckpt_path[0].split('_')[-1].split('.')[0])
@@ -356,7 +356,7 @@ class GLASS(torch.nn.Module):
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch = 0., 0., 0., 0., 0., -1.
             LOGGER.info("No ckpt file found!")
 
-        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch
+        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, pr, re, ac, f1, th, epoch
 
     def _evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training'):
         scores = np.squeeze(np.array(scores))
@@ -376,6 +376,13 @@ class GLASS(torch.nn.Module):
         image_scores = metrics.compute_imagewise_retrieval_metrics(scores, labels_gt, path)
         image_auroc = image_scores["auroc"]
         image_ap = image_scores["ap"]
+        
+        image_metrics = metrics.compute_best_pr_re(labels_gt, scores)
+        image_presisi = image_metrics["precision"]
+        image_recal = image_metrics["recall"]
+        image_akurasi = image_metrics["accuracy"]
+        image_f1 = image_metrics["f1_score"]
+        image_threshold = image_metrics["threshold"]
 
         if len(masks_gt) > 0:
             segmentations = np.array(segmentations)
@@ -395,7 +402,7 @@ class GLASS(torch.nn.Module):
             pixel_pro = -1.
             return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro
 
-        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro
+        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, image_presisi, image_recal, image_akurasi, image_f1, image_threshold
 
     def predict(self, test_dataloader):
         self.forward_modules.eval()
@@ -557,7 +564,7 @@ if __name__ == "__main__":
                 utils.fix_seeds(glass.backbone.seed, device)
                 
             glass.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name)
-            i_auroc, i_ap, p_auroc, p_ap, p_pro, epoch = glass.tester(dataloader, dataset_name)
+            i_auroc, i_ap, p_auroc, p_ap, p_pro, pr, re, ac, f1, th, epoch = glass.tester(dataloader, dataset_name)
             result_collect.append(
                 {
                     "dataset_name": dataset_name,
@@ -566,12 +573,20 @@ if __name__ == "__main__":
                     "pixel_auroc": p_auroc,
                     "pixel_ap": p_ap,
                     "pixel_pro": p_pro,
+                    "precision": pr,
+                    "recall": re,
+                    "accuracy": ac,
+                    "f1_score": f1,
+                    "threshold": th,
                     "best_epoch": epoch,
                 }
             )
             
             if epoch > -1:
+                # print("Debugging types in result_collect[-1]:")
                 for key, item in result_collect[-1].items():
+                    # print(f"{key}: {type(item)}")
+                    
                     if isinstance(item, str):
                         continue
                     elif isinstance(item, int):
