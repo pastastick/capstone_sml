@@ -1,26 +1,40 @@
 from sklearn import metrics
 from skimage import measure
-
 import cv2
 import numpy as np
 import pandas as pd
+import numpy as np
+import warnings
+from sklearn.metrics import precision_recall_curve, accuracy_score
 
-
-def compute_best_pr_re(anomaly_ground_truth_labels, anomaly_prediction_weights):
+def compute_best_pr_re(anomaly_ground_truth_labels, anomaly_prediction_weights, pos_label=None):
     """
     Computes the best precision, recall and threshold for a given set of
     anomaly ground truth labels and anomaly prediction weights.
     """
-    precision, recall, thresholds = metrics.precision_recall_curve(anomaly_ground_truth_labels, anomaly_prediction_weights)
+    precision, recall, thresholds = precision_recall_curve(anomaly_ground_truth_labels, anomaly_prediction_weights)
     f1_scores = 2 * (precision * recall) / (precision + recall)
 
-    best_threshold = thresholds[np.argmax(f1_scores)]
-    best_precision = precision[np.argmax(f1_scores)]
-    best_recall = recall[np.argmax(f1_scores)]
-    print(best_threshold, best_precision, best_recall)
+    best_idx = np.argmax(f1_scores) 
+    best_threshold = thresholds[best_idx]
+    best_precision = precision[best_idx]
+    best_recall = recall[best_idx]
+    best_f1 = f1_scores[best_idx]
+    
+    y_pred = (anomaly_prediction_weights >= best_threshold).astype(int)
+    if pos_label is not None and pos_label != 1:
+        y_pred = np.where(y_pred == 1, pos_label, anomaly_ground_truth_labels.min())
+    
+    best_accuracy = accuracy_score(anomaly_ground_truth_labels, y_pred)
+    
+    # print(best_threshold, best_precision, best_recall)
 
-    return best_threshold, best_precision, best_recall
-
+    return {"precision": best_precision,
+            "recall": best_recall,
+            "accuracy": best_accuracy,
+            "f1_score": best_f1,
+            "threshold": best_threshold,
+            }
 
 def compute_imagewise_retrieval_metrics(anomaly_prediction_weights, anomaly_ground_truth_labels, path='training'):
     """
