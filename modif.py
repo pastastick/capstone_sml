@@ -10,7 +10,8 @@ from torchvision import transforms
 import torch.nn.functional as F
 import math
 from complement.model import Discriminator, Projection, PatchMaker
-import pandas as pd
+import pandas as pd    
+import time
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -347,16 +348,17 @@ class GLASS(torch.nn.Module):
             else:
                 self.load_state_dict(state_dict, strict=False)
 
-            images, scores, segmentations, labels_gt, masks_gt = self.predict(test_data)
+            images, scores, segmentations, labels_gt, masks_gt, avg_time_per_batch, avg_time_per_image = self.predict(test_data)
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, pr, re, ac, f1, th = self._evaluate(
                 images, scores, segmentations, labels_gt, masks_gt, name, path='eval'
             )
             epoch = int(ckpt_path[0].split('_')[-1].split('.')[0])
         else:
             image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, epoch = 0., 0., 0., 0., 0., -1.
+            avg_time_per_batch, avg_time_per_image = 0.0, 0.0
             LOGGER.info("No ckpt file found!")
 
-        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, pr, re, ac, f1, th, epoch
+        return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, pr, re, ac, f1, th, epoch, avg_time_per_batch, avg_time_per_image
 
     def _evaluate(self, images, scores, segmentations, labels_gt, masks_gt, name, path='training'):
         scores = np.squeeze(np.array(scores))
@@ -404,6 +406,9 @@ class GLASS(torch.nn.Module):
 
         return image_auroc, image_ap, pixel_auroc, pixel_ap, pixel_pro, image_presisi, image_recal, image_akurasi, image_f1, image_threshold
 
+
+
+    # Modify the predict method to measure inference time
     def predict(self, test_dataloader):
         self.forward_modules.eval()
 
@@ -413,6 +418,10 @@ class GLASS(torch.nn.Module):
         masks = []
         labels_gt = []
         masks_gt = []
+        
+        # Initialize timing variables
+        total_inference_time = 0.0
+        num_batches = 0
 
         with tqdm.tqdm(test_dataloader, desc="Inferring...", leave=False, unit='batch') as data_iterator:
             for data in data_iterator:
@@ -423,12 +432,26 @@ class GLASS(torch.nn.Module):
                     image = data["image"]
                     images.extend(image.numpy().tolist())
                     img_paths.extend(data["image_path"])
+                
+                # Start timing inference
+                start_time = time.time()
                 _scores, _masks = self._predict(image)
+                end_time = time.time()
+                
+                # Calculate and accumulate inference time
+                batch_inference_time = end_time - start_time
+                total_inference_time += batch_inference_time
+                num_batches += 1
+                
                 for score, mask in zip(_scores, _masks):
                     scores.append(score)
                     masks.append(mask)
 
-        return images, scores, masks, labels_gt, masks_gt
+        # Calculate average inference time per batch and per image
+        avg_time_per_batch = total_inference_time / num_batches if num_batches > 0 else 0
+        avg_time_per_image = total_inference_time / len(images) if len(images) > 0 else 0
+        
+        return images, scores, masks, labels_gt, masks_gt, avg_time_per_batch, avg_time_per_image
 
     def forward(self, x):
         """Forward pass yang mengembalikan skor anomali"""
@@ -553,6 +576,8 @@ if __name__ == "__main__":
     device = set_torch_device()
 
     result_collect = []
+    timing_collect = []
+    
     for dataloader in list_of_dataloaders:
         utils.fix_seeds(seed, device)
         dataset_name = dataloader.name
@@ -564,7 +589,8 @@ if __name__ == "__main__":
                 utils.fix_seeds(glass.backbone.seed, device)
                 
             glass.set_model_dir(os.path.join(models_dir, f"backbone_{i}"), dataset_name)
-            i_auroc, i_ap, p_auroc, p_ap, p_pro, pr, re, ac, f1, th, epoch = glass.tester(dataloader, dataset_name)
+            i_auroc, i_ap, p_auroc, p_ap, p_pro, pr, re, ac, f1, th, epoch, avg_time_batch, avg_time_img = glass.tester(dataloader, dataset_name)
+            
             result_collect.append(
                 {
                     "dataset_name": dataset_name,
@@ -582,17 +608,29 @@ if __name__ == "__main__":
                 }
             )
             
+             # Collect timing metrics
+            timing_collect.append({
+                "dataset_name": dataset_name,
+                "avg_time_per_batch": avg_time_batch,
+                "avg_time_per_image": avg_time_img,
+                "total_images": len(dataloader.dataset)
+            })
+            
             if epoch > -1:
-                # print("Debugging types in result_collect[-1]:")
+                # Print performance metrics
                 for key, item in result_collect[-1].items():
-                    # print(f"{key}: {type(item)}")
-                    
                     if isinstance(item, str):
                         continue
                     elif isinstance(item, int):
                         print(f"{key}:{item}")
                     else:
                         print(f"{key}:{round(item * 100, 2)} ", end="")
+                
+                # Print timing metrics
+                print("\n\nInference Timing:")
+                print(f"Average time per batch: {avg_time_batch:.4f} seconds")
+                print(f"Average time per image: {avg_time_img:.4f} seconds")
+                print(f"Total inference time: {avg_time_batch * len(dataloader):.4f} seconds")
                         
             print("\n")
             result_metric_names = list(result_collect[-1].keys())[1:]
@@ -604,3 +642,10 @@ if __name__ == "__main__":
                 result_metric_names,
                 row_names=result_dataset_names,
             )
+            
+            # Save timing results to CSV
+            timing_df = pd.DataFrame(timing_collect)
+            timing_df.to_csv(os.path.join(results_path, "inference_timing.csv"), index=False)
+        # Save timing results to CSV
+        timing_df = pd.DataFrame(timing_collect)
+        timing_df.to_csv(os.path.join(results_path, "inference_timing.csv"), index=False)

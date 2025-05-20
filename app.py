@@ -1,9 +1,14 @@
 import streamlit as st
 from PIL import Image
 import os
+from csad import inference_openvino_modif, MVTecLOCODataset
+from glass import GLASSInference
+import torch
+import logging
 
-from csad import inference_openvino_modif
-
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 # Threshold per kategori
 thresholds = {
@@ -11,7 +16,22 @@ thresholds = {
     "juice_bottle": {"logical": 13.4014, "structural": 14.5729},
     "pushpins": {"logical": 8.9723, "structural": 3.4282},
     "screw_bag": {"logical": 9.4575, "structural": 4.5171},
-    "splicing_connectors": {"logical": 12.4772, "structural": 12.2652}
+    "splicing_connectors": {"logical": 12.4772, "structural": 12.2652},
+    "bottle": 0.9495,
+    "cable": 0.6089,
+    "capsule": 0.6297,
+    "carpet": 0.9357,
+    "grid": 0.7292,
+    "hazelnut": 0.9702,
+    "leather": 0.9311,
+    "metal_nut": 0.7905,
+    "pill": 0.3974,
+    "screw": 0.4773,
+    "tile": 0.9774,
+    "toothbrush": 0.9055,
+    "transistor":0.9818,
+    "wood": 0.9737,
+    "zipper": 0.8219,
 }
 
 # Mapping nama tampilan ke kategori internal
@@ -20,72 +40,64 @@ MODEL_MAP = {
     "Juice Bottle": "juice_bottle",
     "Pushpins": "pushpins",
     "Screw Bag": "screw_bag",
-    "Splicing Connectors": "splicing_connectors"
+    "Splicing Connectors": "splicing_connectors",
+    "Bottle": "bottle",
+    "Cable": "cable",
+    "Capsule": "capsule",
+    "Carpet": "carpet",
+    "Grid": "grid",
+    "Hazelnut": "hazelnut",
+    "Leather": "leather",
+    "Metal": "metal_nut",
+    "Pill": "pill",
+    "Screw": "screw",
+    "Tile": "tile",
+    "Toothbrush": "toothbrush",
+    "Transistor": "transistor",
+    "Wood": "wood",
+    "Zipper": "zipper"
 }
 
-# Fungsi klasifikasi berdasarkan threshold
-def classify_anomaly(score, category, logical_threshold, structural_threshold):
-    if category =="juice_bottle":
-        if score < logical_threshold:
-            return "Normal"
+# Daftar kategori dengan dua threshold (logical & structural) dari CSAD
+COMPLEX_CATEGORIES = {
+    "breakfast_box",
+    "juice_bottle",
+    "pushpins",
+    "screw_bag",
+    "splicing_connectors"
+}
+
+class AnomalyDetector:
+    def __init__(self, category):
+        self.category = category
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+    def classify_anomaly(self, score):
+        """Fungsi klasifikasi anomaly yang sama seperti sebelumnya"""
+        th = thresholds.get(self.category)
+        if th is None:
+            raise ValueError(f"Kategori '{self.category}' tidak ditemukan di thresholds.")
+
+        if self.category in COMPLEX_CATEGORIES:
+            limit = th["logical"] if self.category == "juice_bottle" else th["structural"]
+            return "NORMAL" if score < limit else "ANOMALY"
         else:
-            return "Terdapat Anomaly"
-    else:
-        if score < structural_threshold:
-            return "normal"
-        else:
-            return "Terdapat Anomaly"
+            return "NORMAL" if score < th else "ANOMALY"
 
-# UI Streamlit
-st.title("📷 Deteksi Anomali Gambar")
-
-# Sidebar: Pilih model
-add_selectbox = st.sidebar.selectbox(
-    "Pilih Model Deteksi",
-    options=MODEL_MAP.keys()
-)
-
-# Ambil kategori internal berdasarkan pilihan
-selected_category = MODEL_MAP[add_selectbox]
-
-# Upload satu file gambar
-uploaded_file = st.file_uploader("Upload satu gambar (PNG/JPG)", type=["png", "jpg"])
-
-if uploaded_file is not None:
-    # Simpan gambar sementara
-    temp_dir = "tempDir"
-    os.makedirs(temp_dir, exist_ok=True)
-    image_path = os.path.join(temp_dir, uploaded_file.name)
-
-    with open(image_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-
-    # Tampilkan gambar yang diupload
-    image = Image.open(image_path)
-    st.image(image, caption="Gambar Diupload", use_container_width=True)
-
-    # Tombol deteksi
-    if st.button("Deteksi"):
-        with st.spinner("Memproses..."):
-            # Jalankan inferensi dengan file tunggal
-            score = inference_openvino_modif(image_path, selected_category)
-
-            # Dapatkan threshold
-            logical_threshold = thresholds[selected_category]["logical"]
-            structural_threshold = thresholds[selected_category]["structural"]
-
-            # Klasifikasikan
-            result = classify_anomaly(score, selected_category, logical_threshold, structural_threshold)
-
-            # Tampilkan skor dan hasil
-            st.success(f"Anomaly Score: {score:.4f}")
-            if result == "Normal":
-                st.success(f"✅ Hasil: {result}")
+    def predict(self, image_path):
+        """Mengembalikan skor anomaly dan hasil klasifikasi"""
+        try:
+            if self.category in COMPLEX_CATEGORIES:
+                score = inference_openvino_modif(image_path, self.category)
             else:
-                st.error(f"⚠️ Hasil: {result}")
+                glass_model = GLASSInference(device=self.device, category=self.category)
+                scores = glass_model.predict(image_path)
+                score = scores[0]
+                LOGGER.info(f"Raw score: {score}")
             
-    # Bersihkan file sementara setelah selesai
-    try:
-        os.remove(image_path)
-    except:
-        pass
+            result = self.classify_anomaly(score)
+            return score, result
+            
+        except Exception as e:
+            LOGGER.error(f"Error processing image: {str(e)}")
+            raise
