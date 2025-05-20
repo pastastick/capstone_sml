@@ -139,6 +139,5 @@ Thumbs.db
 tempDir/
 
 # ignore output folder
-scores/
+output/
 dataset/
-visualization/

@@ -88,17 +88,40 @@ def get_padding_functions(orig_size,target_size=256,resize_target_size=None,mode
     ])
     return padding_func, Padding2Resize(pad_l,pad_t,pad_r,pad_b)
 
+# Function to check GPU availability
+def is_gpu_available():
+    """Check if GPU is available for computation"""
+    if torch.cuda.is_available():
+        return True
+    else:
+        # Also check with OpenVINO if GPU is available
+        try:
+            core = ov.Core()
+            available_devices = core.available_devices
+            for device in available_devices:
+                if "GPU" in device:
+                    return True
+        except Exception as e:
+            print(f"Error checking OpenVINO GPU availability: {e}")
+    return False
+
 ###################################################################
 class MVTecLOCODataset(Dataset):
-    def __init__(self, image_folder, image_size=256, use_pad=True, to_gpu=False):
+    def __init__(self, image_folder, image_size=256, use_pad=True, to_gpu=None):
         """Inisialisasi dataset untuk inferensi dengan path fleksibel."""
         self.image_folder = image_folder
         self.image_size = image_size
         self.use_pad = use_pad
+        
+        if to_gpu is None:
+            self.to_gpu = is_gpu_available()
+        else:
+            self.to_gpu = to_gpu
+        
         self.build_transform()
         # Mengambil semua file PNG dari folder, mendukung subfolder seperti datasets/breakfast_box/11111
         # self.img_paths = glob.glob(os.path.join(image_folder, "**", "*.png"), recursive=True)
-        self.load_images(to_gpu=to_gpu)
+        self.load_images()
 
     def build_transform(self):
         self.norm_transform = transforms.Compose([
@@ -119,7 +142,7 @@ class MVTecLOCODataset(Dataset):
             transforms.ToTensor(),
         ])
 
-    def load_images(self, to_gpu=False):
+    def load_images(self):
         """Memuat gambar dari path yang diberikan."""
         # Jika input adalah file, baca hanya satu gambar
         if os.path.isfile(self.image_folder):
@@ -145,7 +168,7 @@ class MVTecLOCODataset(Dataset):
             img = Image.open(img_path).convert('RGB')
             resize_img = self.resize_norm_transform(img)
             pad_img = self.norm_transform(self.pad_func(img))
-            if to_gpu:
+            if self.to_gpu:
                 resize_img = resize_img.cuda()
                 pad_img = pad_img.cuda()
             self.samples.append({
@@ -163,25 +186,45 @@ class MVTecLOCODataset(Dataset):
         return self.samples[idx]
     
 ###############################################################
-def inference_openvino_modif(image_path, category):
+def inference_openvino_modif(image_path, category, model_dir="ckpt/openvino_models", device=None):
     """Melakukan inferensi pada gambar dari path tertentu dan mengklasifikasikan langsung."""
     # Inisialisasi OpenVINO
     core = ov.Core()
+    
+    # Determine the device to use
+    if device is None:
+        # Auto-detect available devices
+        available_devices = core.available_devices
+        if "GPU" in available_devices:
+            device = "GPU"
+        else:
+            device = "CPU"
+    
+    # Construct model path
+    model_path = os.path.join(model_dir, f"{category}.xml")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+    
     # root = os.getcwd()
     # print(f"path model= ckpt/openvino_models/{category}.xml")
     # print(f"path image= {image_path}")
-    compiled_model = core.compile_model(f"ckpt/openvino_models/{category}.xml", "CPU")
+    
+    # Compile the model with specified device
+    compiled_model = core.compile_model(model_path, device)
     infer_request = compiled_model.create_infer_request()
 
     # Fungsi bantu untuk konversi tensor ke numpy
     def to_numpy(tensor):
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
+    # Check GPU availability for loading data
+    gpu_available = is_gpu_available()
+    
     # Membuat dataset dan dataloader
     test_set = MVTecLOCODataset(
         image_folder=image_path,
         image_size=256,
-        to_gpu=False
+        to_gpu=gpu_available and device == "GPU"
     )
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
@@ -191,6 +234,10 @@ def inference_openvino_modif(image_path, category):
     for sample in tqdm.tqdm(test_loader, desc="Mengklasifikasikan gambar"):
         image = sample['image']
         path = sample['path']  # Batch size 1, ambil path pertama
+        
+        # If data is on GPU but we want CPU inference, move data to CPU
+        if device == "CPU" and isinstance(image, torch.Tensor) and image.is_cuda:
+            image = image.cpu()
         
         # Persiapan input untuk OpenVINO
         input_tensor = ov.Tensor(array=to_numpy(image), shared_memory=False)
