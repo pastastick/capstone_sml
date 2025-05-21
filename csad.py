@@ -5,20 +5,12 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 import glob
 from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score
 import os
 import tqdm
-import argparse
-import time
-import pandas as pd
 import cv2
 import openvino as ov
 from PIL import Image
 import os
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import roc_curve, auc
 
 class Padding2Resize():
     def __init__(self, pad_l, pad_t, pad_r, pad_b):
@@ -88,39 +80,50 @@ def get_padding_functions(orig_size,target_size=256,resize_target_size=None,mode
     ])
     return padding_func, Padding2Resize(pad_l,pad_t,pad_r,pad_b)
 
-# Function to check GPU availability
+# Function to check GPU availability - revised for safer operation
 def is_gpu_available():
-    """Check if GPU is available for computation"""
-    if torch.cuda.is_available():
-        return True
-    else:
-        # Also check with OpenVINO if GPU is available
+    """Check if GPU is available for computation in a safer way"""
+    try:
+        if torch.cuda.is_available():
+            # Additional check to ensure CUDA is actually working
+            try:
+                # Try a simple CUDA operation
+                test_tensor = torch.zeros(1).cuda()
+                test_tensor = test_tensor + 1
+                test_tensor.cpu()  # Move back to CPU
+                del test_tensor    # Clean up
+                return True
+            except Exception:
+                # CUDA available but not working properly
+                return False
+        
+        # Check with OpenVINO if GPU is available
         try:
             core = ov.Core()
             available_devices = core.available_devices
-            for device in available_devices:
-                if "GPU" in device:
-                    return True
-        except Exception as e:
-            print(f"Error checking OpenVINO GPU availability: {e}")
+            return any("GPU" in device for device in available_devices)
+        except Exception:
+            # OpenVINO GPU check failed
+            pass
+    except Exception:
+        # Any other exception during GPU checks
+        pass
+    
+    # Default fallback to CPU
     return False
 
 ###################################################################
 class MVTecLOCODataset(Dataset):
-    def __init__(self, image_folder, image_size=256, use_pad=True, to_gpu=None):
+    def __init__(self, image_folder, image_size=256, use_pad=True, to_gpu=False):  # Default to_gpu to False
         """Inisialisasi dataset untuk inferensi dengan path fleksibel."""
         self.image_folder = image_folder
         self.image_size = image_size
         self.use_pad = use_pad
         
-        if to_gpu is None:
-            self.to_gpu = is_gpu_available()
-        else:
-            self.to_gpu = to_gpu
+        # Only enable GPU if explicitly requested AND it's available
+        self.to_gpu = to_gpu and is_gpu_available()
         
         self.build_transform()
-        # Mengambil semua file PNG dari folder, mendukung subfolder seperti datasets/breakfast_box/11111
-        # self.img_paths = glob.glob(os.path.join(image_folder, "**", "*.png"), recursive=True)
         self.load_images()
 
     def build_transform(self):
@@ -169,8 +172,12 @@ class MVTecLOCODataset(Dataset):
             resize_img = self.resize_norm_transform(img)
             pad_img = self.norm_transform(self.pad_func(img))
             if self.to_gpu:
-                resize_img = resize_img.cuda()
-                pad_img = pad_img.cuda()
+                try:
+                    resize_img = resize_img.cuda()
+                    pad_img = pad_img.cuda()
+                except Exception:
+                    # If moving to GPU fails, keep on CPU
+                    pass
             self.samples.append({
                 'image': resize_img,
                 'pad_image': pad_img,
@@ -186,28 +193,23 @@ class MVTecLOCODataset(Dataset):
         return self.samples[idx]
     
 ###############################################################
-def inference_openvino_modif(image_path, category, model_dir="ckpt/openvino_models", device=None):
+def inference_openvino_modif(image_path, category, model_dir="ckpt/openvino_models", device="CPU"):
     """Melakukan inferensi pada gambar dari path tertentu dan mengklasifikasikan langsung."""
     # Inisialisasi OpenVINO
     core = ov.Core()
     
-    # Determine the device to use
-    if device is None:
-        # Auto-detect available devices
-        available_devices = core.available_devices
-        if "GPU" in available_devices:
-            device = "GPU"
-        else:
-            device = "CPU"
+    # Always check if requested device is actually available
+    available_devices = core.available_devices
+    
+    # Default to CPU if requested device is not available
+    if device != "CPU" and device not in available_devices:
+        print(f"Warning: Requested device '{device}' not available. Falling back to CPU.")
+        device = "CPU"
     
     # Construct model path
     model_path = os.path.join(model_dir, f"{category}.xml")
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
-    
-    # root = os.getcwd()
-    # print(f"path model= ckpt/openvino_models/{category}.xml")
-    # print(f"path image= {image_path}")
     
     # Compile the model with specified device
     compiled_model = core.compile_model(model_path, device)
@@ -217,42 +219,49 @@ def inference_openvino_modif(image_path, category, model_dir="ckpt/openvino_mode
     def to_numpy(tensor):
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
-    # Check GPU availability for loading data
-    gpu_available = is_gpu_available()
+    # Use GPU for dataset only if we're doing GPU inference and GPU is available
+    use_gpu_for_data = (device == "GPU") and is_gpu_available()
     
     # Membuat dataset dan dataloader
     test_set = MVTecLOCODataset(
         image_folder=image_path,
         image_size=256,
-        to_gpu=gpu_available and device == "GPU"
+        to_gpu=use_gpu_for_data
     )
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
     results = []
+    score = 0.0
     
     # Proses inferensi
     for sample in tqdm.tqdm(test_loader, desc="Mengklasifikasikan gambar"):
         image = sample['image']
-        path = sample['path']  # Batch size 1, ambil path pertama
+        path = sample['path'][0] if isinstance(sample['path'], list) else sample['path']
         
-        # If data is on GPU but we want CPU inference, move data to CPU
+        # Ensure data is on CPU if doing CPU inference
         if device == "CPU" and isinstance(image, torch.Tensor) and image.is_cuda:
-            image = image.cpu()
+            try:
+                image = image.cpu()
+            except Exception as e:
+                print(f"Error moving tensor to CPU: {e}")
+                # Create a fallback CPU tensor if needed
+                if hasattr(image, 'shape'):
+                    image = torch.zeros(image.shape)
         
         # Persiapan input untuk OpenVINO
-        input_tensor = ov.Tensor(array=to_numpy(image), shared_memory=False)
-        infer_request.set_input_tensor(input_tensor)
+        try:
+            input_tensor = ov.Tensor(array=to_numpy(image), shared_memory=False)
+            infer_request.set_input_tensor(input_tensor)
 
-        # Jalankan inferensi
-        infer_request.start_async()
-        infer_request.wait()
+            # Jalankan inferensi
+            infer_request.start_async()
+            infer_request.wait()
 
-        # Ambil skor dari output
-        output = infer_request.get_output_tensor()
-        score = output.data[0]  # Skor anomali
-        # print(f"{path}")
-        # print(f"image score: {score}")
-        
-        # results.append((path, score))
+            # Ambil skor dari output
+            output = infer_request.get_output_tensor()
+            score = float(output.data[0])  # Skor anomali
+        except Exception as e:
+            print(f"Error during inference: {e}")
+            score = 0.0
         
     return score
