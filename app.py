@@ -1,193 +1,265 @@
 import streamlit as st
-from PIL import Image
-import os
-from csad import inference_openvino_modif, MVTecLOCODataset
-from glass import GLASSInference
-import torch
-import logging
+from config import MODEL_MAP, COMPLEX_CATEGORIES
 import config
+from main import AnomalyDetector
+import time
+import NeonDatabase
+import logging
+import asyncio
+import sys
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
+st.set_page_config(
+    page_title="Anomaly Detection App",
+    page_icon="🔎",
+    layout="wide",
+    initial_sidebar_state="auto",
+)
 
-class AnomalyDetector:
-    def __init__(self, model_name, category):
-        """
-        Initialize detector with specific model and category
-        
-        Args:
-            model_name: Name of model to use (GLASS, CSAD, etc.)
-            category: Category to detect anomalies for (display name)
-        """
-        self.model_name = model_name
-        self.display_category = category
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        # Convert display category to internal category
-        self.category = self._get_internal_category(category)
-        
-        # Load thresholds and accuracy for this model
-        self.thresholds = self._get_thresholds()
-        self.accuracy = self._get_accuracy()
-        
-    def _get_internal_category(self, display_category):
-        """Convert display category to internal category name"""
-        if self.model_name == "CSAD":
-            return config.COMPLEX_CATEGORIES.get(display_category, display_category.lower())
-        else:
-            return config.MODEL_MAP.get(display_category, display_category.lower())
-    
-    def _get_thresholds(self):
-        """Get threshold configuration for the current model"""
-        threshold_map = {
-            "CSAD": config.thresholds_CSAD,
-            "GLASS": config.thresholds_GLASS,
-            "Autoencoder with L2 loss function": config.thresholds_Autoencoder,
-            "ResNet50 with KNN": config.thresholds_ResNet50,
-            "Res2Net": config.thresholds_Res2Net,
-            "PatchCore": config.thresholds_PatchCore,
-        }
-        
-        thresholds = threshold_map.get(self.model_name)
-        if thresholds is None:
-            raise ValueError(f"Model '{self.model_name}' not supported")
-        
-        return thresholds
-    
-    def _get_accuracy(self):
-        """Get accuracy configuration for the current model"""
-        accuracy_map = {
-            "CSAD": config.accuracy_CSAD,
-            "GLASS": config.accuracy_GLASS,
-            "Autoencoder with L2 loss function": config.accuracy_Autoencoder,
-            "ResNet50 with KNN": config.accuracy_ResNet50,
-            "Res2Net": config.accuracy_Res2Net,
-            "PatchCore": config.accuracy_PatchCore,
-        }
-        
-        accuracy = accuracy_map.get(self.model_name)
-        if accuracy is None:
-            raise ValueError(f"Model '{self.model_name}' not supported")
-        
-        return accuracy
-    
-    def get_threshold(self):
-        """Get appropriate threshold based on model and category"""
-        threshold = self.thresholds.get(self.category)
-        if threshold is None:
-            raise ValueError(f"Category '{self.category}' not found in thresholds for model '{self.model_name}'")
-        
-        return threshold
-    
-    def get_accuracy(self):
-        """Get accuracy for the current category"""
-        accuracy = self.accuracy.get(self.category)
-        if accuracy is None:
-            LOGGER.warning(f"Accuracy not found for category '{self.category}' in model '{self.model_name}'")
-            return 0
-        
-        return accuracy
-    
-    def get_overall_accuracy(self):
-        """Get overall accuracy for the current model"""
-        return self.accuracy.get("overall", 0)
-    
-    def classify_anomaly(self, score):
-        """
-        Classify anomaly based on score and threshold
-        
-        Args:
-            score: Anomaly score from model
-            
-        Returns:
-            str: "NORMAL" or "ANOMALY"
-        """
-        threshold = self.get_threshold()
-        
-        if self.model_name == 'CSAD':
-            # CSAD has different threshold structure
-            if isinstance(threshold, dict):
-                # For juice_bottle, use logical threshold, for others use structural
-                if self.category == "juice_bottle":
-                    limit = threshold.get("logical")
-                else:
-                    limit = threshold.get("structural")
-                
-                if limit is None:
-                    raise ValueError(f"Appropriate threshold not found for category '{self.category}' in CSAD model")
-                
-                return "NORMAL" if score < limit else "ANOMALY"
-            else:
-                # If threshold is not a dict, use it directly
-                return "NORMAL" if score < threshold else "ANOMALY"
-        else:
-            # For other models, threshold is a single value
-            return "NORMAL" if score < threshold else "ANOMALY"
 
-    def predict(self, image_path):
-        """
-        Run inference with appropriate model
-        
-        Args:
-            image_path: Path to the image file
-            
-        Returns:
-            tuple: (score, classification)
-        """
-        try:
-            if self.model_name == "CSAD":
-                score = inference_openvino_modif(image_path, self.category)
-                
-            elif self.model_name == "GLASS":
-                glass_model = GLASSInference(device=self.device, category=self.category)
-                scores = glass_model.predict(image_path)
-                score = scores[0]
-            
-            ###### belum di inisiasi
-            elif self.model_name == "Autoencoder with L2 loss function":
-                # Placeholder for autoencoder implementation
-                raise NotImplementedError(f"Model '{self.model_name}' not implemented yet")
-                
-            elif self.model_name == "ResNet50 with KNN":
-                # Placeholder for ResNet50 implementation
-                raise NotImplementedError(f"Model '{self.model_name}' not implemented yet")
-                
-            elif self.model_name == "Res2Net":
-                # Placeholder for Res2Net implementation
-                raise NotImplementedError(f"Model '{self.model_name}' not implemented yet")
-                
-            elif self.model_name == "PatchCore":
-                # Placeholder for PatchCore implementation
-                raise NotImplementedError(f"Model '{self.model_name}' not implemented yet")
-                
-            else:
-                raise ValueError(f"Model '{self.model_name}' not supported")
-                
-            # Classify the result
-            classification = self.classify_anomaly(score)
-            
-            LOGGER.info(f"Model: {self.model_name}, Category: {self.category}, Score: {score:.4f}, Result: {classification}")
-            
-            return score, classification
-            
-        except Exception as e:
-            LOGGER.error(f"Error processing image with {self.model_name} model: {str(e)}")
-            raise
+######## settingan Sidebar ##########################################
+models_data = {
+    "Autoencoder with L2 loss function": f"overall accuracy: {config.accuracy_Autoencoder['overall']}%",
+    "ResNet50 with KNN": f"overall accuracy: {config.accuracy_ResNet50['overall']}%",
+    "Res2Net": f"overall accuracy: {config.accuracy_Res2Net['overall']}%",
+    "PatchCore": f"overall accuracy: {config.accuracy_PatchCore['overall']}%",
+    "GLASS": f"overall accuracy: {config.accuracy_GLASS['overall']}%",
+    "CSAD": f"overall accuracy: {config.accuracy_CSAD['overall']}%"
+}
+
+# Menggunakan dictionary untuk membuat radio button
+model = st.sidebar.radio(
+    label="Choose model",
+    options=list(models_data.keys()),
+        captions=list(models_data.values())
+)
+st.sidebar.badge(f"Kamu memilih model **{model}**", color="green", icon=":material/star:")
+
+# Kategori
+if model == "CSAD":
+    category = st.sidebar.selectbox("Choose category", COMPLEX_CATEGORIES.keys())
+else:
+    category = st.sidebar.selectbox("Choose category", MODEL_MAP.keys())
+st.sidebar.badge(f"Kamu memilih kategori **{category}**", icon=":material/check:")
+
+# Initialize detector
+ad = AnomalyDetector(model_name=model, category=category)
+info = ad.get_model_info()
+st.sidebar.badge(f"akurasi **{model}** untuk *{category}* = {info['category_accuracy']}%")
+
+
+####### settingan body/ bagian tengah ###################################
+_, mid, right = st.columns([0.1, 0.6, 0.3])
+
+with mid:
+    judul = st.container(border=True)
+    st.title("📷 Deteksi Anomali Pada Gambar")
+    st.container(border=False, height=10)
     
-    def get_model_info(self):
-        """
-        Get model information including accuracy
-        
-        Returns:
-            dict: Model information
-        """
-        return {
-            "model_name": self.model_name,
-            "category": self.display_category,
-            "internal_category": self.category,
-            "threshold": self.get_threshold(),
-            "category_accuracy": self.get_accuracy(),
-            "overall_accuracy": self.get_overall_accuracy()
-        }
+    uploaded_files = st.file_uploader(
+        "Upload Image (PNG/JPG)",
+        type=["png", "jpg"],
+        accept_multiple_files=True
+    )
+    st.container(border=False, height=10)
+    
+    # Process button
+    if st.button("Process Images", type="primary"):
+        if not uploaded_files:
+            st.warning("Please upload at least one image")
+        else:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            error_container = st.container()
+            
+            processed_count = 0
+            start_time = time.time()
+            
+            processed_results = []
+            
+            for i, uploaded_file in enumerate(uploaded_files):
+                try:
+                    # Update progress
+                    progress = int((i + 1) / len(uploaded_files) * 100)
+                    progress_bar.progress(progress)
+                    status_text.text(f"Processing {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
+                    
+                    # Get image bytes
+                    image_bytes = uploaded_file.getvalue()
+                    
+                    # Run prediction
+                    with st.spinner(f"Analyzing {uploaded_file.name}..."):
+                        score, classification = ad.predict(image_bytes)
+                        
+                    processed_results.append((uploaded_file.name, score, classification))
+                    
+                    # Save to database
+                    with st.spinner(f"Saving results for {uploaded_file.name}..."):
+                        success = NeonDatabase.save_image_record(
+                            image_name=uploaded_file.name,
+                            category=category,  # PARAMETER BARU
+                            image_bytes=image_bytes,
+                            score=score,
+                            classification=classification
+                        )
+                        
+                        if success:
+                            processed_count += 1
+                            st.toast(f"Saved {uploaded_file.name}", icon="✅")
+                        else:
+                            error_container.error(f"Failed to save {uploaded_file.name}")
+                
+                except Exception as e:
+                    error_container.error(f"❌ Error processing {uploaded_file.name}: {str(e)}")
+                    LOGGER.exception(f"Error processing {uploaded_file.name}")
+            
+            # Show final status
+            if processed_count > 0:
+                processing_time = time.time() - start_time
+                status_text.success(
+                    f"✅ Processed {processed_count}/{len(uploaded_files)} images successfully! "
+                    f"Avg time: {processing_time/len(uploaded_files):.2f}s per image"
+                )
+                
+                # Show results for each processed image
+                for name, score, classification in processed_results:
+                    st.success(f"✅ The '{name}' image is an *{classification}* with a **{score:.3f}** score.")
+            progress_bar.empty()
+    
+
+## rencana akan aku buat untuk monitor jumlah total input image
+with right:
+    with st.container(border=True):
+        st.subheader("📊 Image Status")
+        if uploaded_files:
+            st.metric("Total Images", len(uploaded_files))
+            st.metric("Selected Category", category)
+        else:
+            st.info("No images uploaded yet")
+
+
+
+
+
+
+kitas, katas = st.columns([0.4, 0.7])
+
+### rencana akan aku buat format FIFO untuk setiap kategori
+with kitas:
+    output = st.container(border=True)
+    output.write("""
+             <style>
+            .custom-line {
+                font-family: monospace;
+                white-space: pre;
+                color: rgb(60, 110, 208);
+                font-size: 24px;
+                }
+            </style>
+
+            <div class="custom-line"><b> Kategori</b>\t <span style="color:black">30</span></div>
+            <div class="custom-line">total\t <span style="color:#22DD22">102</span></div>
+             """, unsafe_allow_html=True)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+### biarkan kosong dulu 
+with katas:
+    chart = st.container(border=True, height=200)
+    chart.markdown("masih kosong")
+    
+kiwah, kawah = st.columns([0.5, 0.5])
+
+with kiwah:
+    table = st.container(border=True, height=300)
+    table.markdown("masih kosong")
+    
+with kawah:
+    tabel = st.container(border=True, height=300)
+    tabel.markdown("masih kosong")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##### settingan foot/ bagian bawah #################################
+
+def convert_image_data(image_data):
+    """Convert database image data to bytes for display"""
+    if isinstance(image_data, memoryview):
+        return bytes(image_data)
+    return image_data
+
+with st.expander("Output Gallery"):
+    unique_categories = NeonDatabase.get_unique_categories()
+    
+    # Buat tabs hanya jika ada kategori
+    if unique_categories:
+        tabs = st.tabs(unique_categories)
+    
+        for tab, category in zip(tabs, unique_categories):
+            with tab:
+                # Buat kolom untuk gambar normal dan anomali
+                normal_col, anomaly_col = st.columns(2)
+                 
+                # Gambar Normal
+                with normal_col:
+                    st.subheader(f"Normal ({category})")
+                    normal_images = NeonDatabase.get_images_by_category_and_classification(
+                        category, "NORMAL", limit=5
+                    )
+                    
+                    if normal_images:
+                        for name, image_data, score in normal_images:
+                            st.image(
+                                convert_image_data(image_data),
+                                caption=f"{name} (Score: {score:.4f})",
+                                use_container_width =True
+                            )
+                    else:
+                        st.info(f"No normal images found for {category}")
+                        
+                # Gambar Anomali
+                with anomaly_col:
+                    st.subheader(f"Anomaly ({category})")
+                    anomaly_images = NeonDatabase.get_images_by_category_and_classification(
+                        category, "ANOMALY", limit=5
+                    )
+                    
+                    if anomaly_images:
+                        for name, image_data, score in anomaly_images:
+                            st.image(
+                                convert_image_data(image_data),
+                                caption=f"{name} (Score: {score:.4f})",
+                                use_container_width =True
+                            )
+                    else:
+                        st.info(f"No anomaly images found for {category}")
+                
+    else:
+        st.info("No images found in database")
