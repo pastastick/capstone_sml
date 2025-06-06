@@ -141,3 +141,8 @@ tempDir/
 # ignore output folder
 output/
 dataset/
+mvtec_bottle__
+mvtec_cable__
+mvtec_hazelnut__
+mvtec_wood_
+mvtec_zipper_
