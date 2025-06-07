@@ -112,9 +112,9 @@ thresholds_GLASS = {
 
 # Note: PatchCore thresholds need to be initialized with actual values
 thresholds_PatchCore = {
-    "bottle": 0.95,     # Placeholder - needs actual value
-    "hazelnut": 0.97,   # Placeholder - needs actual value  
-    "cable": 0.61,      # Placeholder - needs actual value
+    "bottle": 13.52,     # Placeholder - needs actual value
+    "hazelnut": 18.9,   # Placeholder - needs actual value  
+    "cable": 15.69,      # Placeholder - needs actual value
 }
 
 # Accuracy configurations
@@ -143,7 +143,7 @@ accuracy_GLASS = {
 
 # Note: PatchCore accuracies need to be initialized with actual values
 accuracy_PatchCore = {
-    "bottle": 95,      # Placeholder - needs actual value
-    "hazelnut": 98,    # Placeholder - needs actual value
-    "cable": 92,       # Placeholder - needs actual value
+    "bottle": 100,      # Placeholder - needs actual value
+    "hazelnut": 100,    # Placeholder - needs actual value
+    "cable": 96,       # Placeholder - needs actual value
 }

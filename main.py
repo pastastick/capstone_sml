@@ -4,14 +4,19 @@ import os
 import tempfile
 from configuration.csad import inference_openvino_modif, MVTecLOCODataset
 from configuration.glass import GLASSInference
-from configuration.patchcore import inference_patchcore, resnet_feature_extractor
+from configuration.patchcore import inference_patchcore, resnet_feature_extractor, transform
 import torch
 import logging
 from configuration import config
+from pathlib import Path # Pastikan Path diimpor
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
+
+# Base directory for models (adjust this path as needed in your environment)
+# Menggunakan Path() agar MODELS_BASE_DIR menjadi objek Path
+MODELS_BASE_DIR = Path("models") 
 
 
 class AnomalyDetector:
@@ -23,7 +28,7 @@ class AnomalyDetector:
             category_display_name: Display name of category (e.g., "Bottle", "Hazelnut")
         """
         self.display_category = category_display
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu") # User requested CPU
         
         # Convert display category to internal category
         self.category = category_display
@@ -31,16 +36,19 @@ class AnomalyDetector:
         # Auto-select model based on category
         self.model_name = config.get_model_for_category(self.category)
         
-        # Load thresholds and accuracy for this model
+        # Load thresholds and accuracy for this model from config.py
         self.threshold = config.get_threshold_for_category(self.category)
         self.accuracy = config.get_accuracy_for_category(self.category)
         
         LOGGER.info(f"Initialized detector: Category={self.display_category}, "
                    f"Internal={self.category}, Model={self.model_name}, "
-                   f"Accuracy={self.accuracy}%")
+                   f"Threshold={self.threshold}, Accuracy={self.accuracy}%")
         
     def get_threshold(self):
-        """Get threshold for the current category"""
+        """
+        Get threshold for the current category.
+        This will fetch the threshold from config.py, which now includes PatchCore thresholds.
+        """
         return self.threshold
     
     def get_accuracy(self):
@@ -53,10 +61,10 @@ class AnomalyDetector:
     
     def classify_anomaly(self, score):
         """
-        Classify anomaly based on score and threshold
+        Classify anomaly based on score and the pre-loaded threshold from config.py.
         
         Args:
-            score: Anomaly score from model
+            score (float): Anomaly score from model
             
         Returns:
             str: "NORMAL" or "ANOMALY"
@@ -77,10 +85,10 @@ class AnomalyDetector:
                 
                 return "NORMAL" if score < limit else "ANOMALY"
             else:
-                # If threshold is not a dict, use it directly
+                # If threshold is not a dict, use it directly (fallback, though CSAD usually has dict)
                 return "NORMAL" if score < threshold else "ANOMALY"
         else:
-            # For other models, threshold is a single value
+            # For GLASS and PatchCore, threshold is a single value from config.py
             return "NORMAL" if score < threshold else "ANOMALY"
 
     def predict(self, image_bytes):
@@ -93,6 +101,9 @@ class AnomalyDetector:
         Returns:
             tuple: (score, classification)
         """
+        tmp_path = None # Initialize tmp_path to None
+        score = 0.0 # Initialize score
+        
         try:
             # Create a temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
@@ -102,7 +113,9 @@ class AnomalyDetector:
                 
             # Process based on auto-selected model type
             if self.model_name == "CSAD":
-                score = inference_openvino_modif(tmp_path, self.category)
+                # CSAD models are typically XML files for OpenVINO
+                # model_dir di inference_openvino_modif expects a string, so convert Path to str
+                score = inference_openvino_modif(tmp_path, self.category, device=self.device.type.upper())
                 
             elif self.model_name == "GLASS":
                 glass_model = GLASSInference(device=self.device, category=self.category)
@@ -110,13 +123,15 @@ class AnomalyDetector:
                 score = scores[0]
                 
             elif self.model_name == "PatchCore":
-                model_dir = "models/"
-                memory_bank_path = os.path.join(model_dir, f"{self.category}_memory_bank.pt")
+                # Construct the path to the memory_bank.pt file for PatchCore
+                # Menggunakan Path() concatenation (/) agar memory_bank_path adalah objek Path
+                memory_bank_filename = f"{self.category}_memory_bank.pt"
+                memory_bank_path = MODELS_BASE_DIR / memory_bank_filename
 
                 # Perform PatchCore inference
                 score = inference_patchcore(
                     tmp_path, 
-                    memory_bank_path, 
+                    memory_bank_path, # memory_bank_path sekarang adalah objek Path
                     device_str=self.device.type
                 )
                 
@@ -124,21 +139,22 @@ class AnomalyDetector:
                 raise ValueError(f"Model '{self.model_name}' not supported")
                 
             score = float(score)
-            # Classify the result
+            # Classify the result using the threshold pre-loaded from config.py
             classification = self.classify_anomaly(score)
             
             LOGGER.info(f"Model: {self.model_name}, Category: {self.category}, "
                        f"Score: {score:.4f}, Result: {classification}")
             
             # Clean up temp file
-            os.unlink(tmp_path)
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
             
             return score, classification
             
         except Exception as e:
             LOGGER.error(f"Error processing image with {self.model_name} model: {str(e)}")
             # Clean up temp file if it exists
-            if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            if 'tmp_path' in locals() and tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             raise
     

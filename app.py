@@ -4,6 +4,11 @@ from main import AnomalyDetector
 import time
 from configuration import NeonDatabase
 import logging
+import matplotlib.dates as mdates
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
+import pandas as pd
 import asyncio
 import sys
 
@@ -171,19 +176,87 @@ with kitas:
     
     
     
-    
-    
-    
-    
-    
-    
-    
-    
+
     
 ### biarkan kosong dulu 
+# Fungsi untuk membuat quality control chart
+def create_quality_control_chart():
+    # Data dummy: 30 hari bulan November
+    dates = pd.date_range(start="2023-11-01", end="2023-11-30")
+    np.random.seed(42)
+    
+    # Generate data persentase anomaly (antara 0-10%)
+    anomaly_percent = np.random.uniform(0, 10, 30)
+    
+    # Buat figure dan axis
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Plot garis persentase anomaly
+    ax.plot(dates, anomaly_percent, 'o-', color='#1f77b4', linewidth=2, markersize=6, label='Persentase Anomali')
+    
+    # Hitung rata-rata (center line)
+    avg_percent = np.mean(anomaly_percent)
+    ax.axhline(y=avg_percent, color='r', linestyle='--', label=f'Rata-rata ({avg_percent:.2f}%)')
+    
+    # Hitung batas kontrol (3 sigma)
+    std_dev = np.std(anomaly_percent)
+    upper_limit = avg_percent + 3 * std_dev
+    lower_limit = max(0, avg_percent - 3 * std_dev)  # Pastikan tidak negatif
+    
+    ax.axhline(y=upper_limit, color='g', linestyle=':', label=f'Batas Kontrol Atas ({upper_limit:.2f}%)')
+    ax.axhline(y=lower_limit, color='g', linestyle=':', label=f'Batas Kontrol Bawah ({lower_limit:.2f}%)')
+    
+    # Format tanggal
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=5))
+    
+    # Atur label dan judul
+    ax.set_title('Quality Control : P-Chart\nPersentase Anomali Bulan November', fontsize=14)
+    ax.set_xlabel('Tanggal', fontsize=12)
+    ax.set_ylabel('Persentase Anomali (%)', fontsize=12)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.legend(loc='upper right')
+    
+    # Atur batas y
+    ax.set_ylim(0, max(12, upper_limit + 2))
+    
+    # Atur layout
+    plt.tight_layout()
+    return fig
+
 with katas:
-    chart = st.container(border=True, height=200)
-    chart.markdown("masih kosong")
+    st.markdown("""
+    <style>
+    .chart-title {
+        font-size: 18px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 10px;
+        color: #2c3e50;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="chart-title">Quality Control : P-Chart</div>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align: center; margin-bottom: 20px; color: #7f8c8d;">Persentase Anomali Bulan November</div>', unsafe_allow_html=True)
+    
+    # Generate dan tampilkan chart
+    fig = create_quality_control_chart()
+    st.pyplot(fig)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
 kiwah, kawah = st.columns([0.5, 0.5])
 
