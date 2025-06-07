@@ -1,5 +1,7 @@
 *.xml filter=lfs diff=lfs merge=lfs -text
-*.bin filter=lfs diff=lfs merge=lfs -text
+C:/SEMESTER_6/capstone_sml/ckpt/openvino_models/juice_bottle.bin
+C:/SEMESTER_6/capstone_sml/ckpt/openvino_models/pushpins.bin
+C:/SEMESTER_6/capstone_sml/ckpt/openvino_models/screw_bag.bin
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_capsule/ckpt_best_56.pth filter=lfs diff=lfs merge=lfs -text
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_carpet/ckpt_best_431.pth filter=lfs diff=lfs merge=lfs -text
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_grid/ckpt_best_581.pth filter=lfs diff=lfs merge=lfs -text
