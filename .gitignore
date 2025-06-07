@@ -141,7 +141,6 @@ tempDir/
 # ignore output folder
 output/
 dataset/
-ckpt/openvino_models/breakfast_box.*
 ckpt/openvino_models/splicing_connectors.*
 ckpt/openvino_models/juice_bottle.*
 models/hazelnut_memory_bank.pt
