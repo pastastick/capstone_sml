@@ -1,9 +1,8 @@
 import streamlit as st
-from config import MODEL_MAP, COMPLEX_CATEGORIES
-import config
+from configuration import config
 from main import AnomalyDetector
 import time
-import NeonDatabase
+from configuration import NeonDatabase
 import logging
 import asyncio
 import sys
@@ -21,34 +20,36 @@ st.set_page_config(
 
 
 ######## settingan Sidebar ##########################################
-models_data = {
-    "Autoencoder with L2 loss function": f"overall accuracy: {config.accuracy_Autoencoder['overall']}%",
-    "ResNet50 with KNN": f"overall accuracy: {config.accuracy_ResNet50['overall']}%",
-    "Res2Net": f"overall accuracy: {config.accuracy_Res2Net['overall']}%",
-    "PatchCore": f"overall accuracy: {config.accuracy_PatchCore['overall']}%",
-    "GLASS": f"overall accuracy: {config.accuracy_GLASS['overall']}%",
-    "CSAD": f"overall accuracy: {config.accuracy_CSAD['overall']}%"
-}
-
-# Menggunakan dictionary untuk membuat radio button
-model = st.sidebar.radio(
-    label="Choose model",
-    options=list(models_data.keys()),
-        captions=list(models_data.values())
+# Category Selection Only
+category = st.sidebar.selectbox(
+    "Choose category", 
+    list(config.ALL_CATEGORIES.keys()),
+    index=None
 )
-st.sidebar.badge(f"Kamu memilih model **{model}**", color="green", icon=":material/star:")
 
-# Kategori
-if model == "CSAD":
-    category = st.sidebar.selectbox("Choose category", COMPLEX_CATEGORIES.keys())
-else:
-    category = st.sidebar.selectbox("Choose category", MODEL_MAP.keys())
-st.sidebar.badge(f"Kamu memilih kategori **{category}**", icon=":material/check:")
+# Convert display name to internal category name
+if category != None:
+    category_internal = config.ALL_CATEGORIES[category]
 
-# Initialize detector
-ad = AnomalyDetector(model_name=model, category=category)
-info = ad.get_model_info()
-st.sidebar.badge(f"akurasi **{model}** untuk *{category}* = {info['category_accuracy']}%")
+    # Automatically get the appropriate model for this category
+    selected_model = config.get_model_for_category(category_internal)
+
+    # Display category selection confirmation
+    st.sidebar.badge(
+        f"Kamu memilih kategori **{category}**", 
+        icon=":material/check:"
+    )
+
+    # Display auto-selected model and accuracy
+    category_accuracy = config.get_accuracy_for_category(category_internal)
+    st.sidebar.info(
+        f"Model: **{selected_model}**\n\n"
+        f"Model accuracy is **{category_accuracy}%**"
+    )
+
+    # Initialize detector with auto-selected model
+    ad = AnomalyDetector(category_internal)
+    info = ad.get_model_info()
 
 
 ####### settingan body/ bagian tengah ###################################
@@ -68,7 +69,9 @@ with mid:
     
     # Process button
     if st.button("Process Images", type="primary"):
-        if not uploaded_files:
+        if category == None:
+            st.warning("Please select the category first")
+        elif not uploaded_files:
             st.warning("Please upload at least one image")
         else:
             progress_bar = st.progress(0)

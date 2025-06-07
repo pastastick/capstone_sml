@@ -5,7 +5,6 @@ C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_carpet/ckpt_best_431.
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_grid/ckpt_best_581.pth filter=lfs diff=lfs merge=lfs -text
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_leather/ckpt_best_119.pth filter=lfs diff=lfs merge=lfs -text
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_metal_nut/ckpt_best_5.pth filter=lfs diff=lfs merge=lfs -text
-C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_pill/ckpt_best_233.pth filter=lfs diff=lfs merge=lfs -text
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_screw/ckpt_best_139.pth filter=lfs diff=lfs merge=lfs -text
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_tile/ckpt_best_369.pth filter=lfs diff=lfs merge=lfs -text
 C:/SEMESTER_6/capstone_sml/results/models/backbone_0/mvtec_toothbrush/ckpt_best_543.pth filter=lfs diff=lfs merge=lfs -text
