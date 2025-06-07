@@ -4,6 +4,7 @@ import os
 import tempfile
 from configuration.csad import inference_openvino_modif, MVTecLOCODataset
 from configuration.glass import GLASSInference
+from configuration.patchcore import inference_patchcore, resnet_feature_extractor
 import torch
 import logging
 from configuration import config
@@ -109,9 +110,15 @@ class AnomalyDetector:
                 score = scores[0]
                 
             elif self.model_name == "PatchCore":
-                # PatchCore implementation
-                # TODO: Implement PatchCore inference
-                raise NotImplementedError(f"Model '{self.model_name}' not implemented yet")
+                model_dir = "models/"
+                memory_bank_path = os.path.join(model_dir, f"{self.category}_memory_bank.pt")
+
+                # Perform PatchCore inference
+                score = inference_patchcore(
+                    tmp_path, 
+                    memory_bank_path, 
+                    device_str=self.device.type
+                )
                 
             else:
                 raise ValueError(f"Model '{self.model_name}' not supported")
