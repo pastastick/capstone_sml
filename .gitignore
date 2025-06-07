@@ -141,13 +141,6 @@ tempDir/
 # ignore output folder
 output/
 dataset/
-mvtec_wood/
-mvtec_zipper/
-mvtec_pill/
-mvtec_transistor/
-mvtec_toothbrush/
-mvtec_tile/
-mvtec_screw/
 ckpt/openvino_models/breakfast_box.*
 ckpt/openvino_models/splicing_connectors.*
 ckpt/openvino_models/juice_bottle.*
