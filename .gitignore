@@ -144,5 +144,9 @@ dataset/
 mvtec_wood/
 mvtec_zipper/
 mvtec_pill/
-breakfast_box.bin
-splicing_connectors.bin
+mvtec_transistor/
+mvtec_toothbrush/
+mvtec_tile/
+mvtec_screw/
+ckpt/openvino_models/breakfast_box.*
+ckpt/openvino_models/splicing_connectors.*
