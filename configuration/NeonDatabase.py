@@ -94,6 +94,25 @@ def get_images_by_category_and_classification(category, classification, limit=5)
         cur.close()
         release_connection(conn)
 
+def get_category_stats():
+    """Get category statistics: normal and anomaly counts"""
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT 
+                category,
+                COUNT(CASE WHEN classification = 'NORMAL' THEN 1 END) AS normal_count,
+                COUNT(CASE WHEN classification = 'ANOMALY' THEN 1 END) AS anomaly_count,
+                MAX(timestamp) AS last_updated
+            FROM images
+            GROUP BY category
+        """)
+        return cur.fetchall()
+    finally:
+        cur.close()
+        release_connection(conn)
+        
 def create_table_if_not_exists():
     """Create images table if not exists"""
     conn = get_connection()
