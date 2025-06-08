@@ -73,7 +73,7 @@ st.sidebar.download_button(
 _, mid, _,  right = st.columns([0.1, 0.5, 0.05, 0.25])
 
 with mid:
-    st.markdown("<h1 style='text-align: left; color: #1b4185;'>📷 Anomaly Detection</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: left; color: #2694ee;'>📷 Anomaly Detection</h1>", unsafe_allow_html=True)
     st.markdown("<h6 style='text-align: left; color: #707070;'>Upload images and let our AI detect anomalies.</h6>", unsafe_allow_html=True) # Changed from h3 to h6 for better hierarchy
 
     st.container(border=False, height=10) # Empty container for spacing
