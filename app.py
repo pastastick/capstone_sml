@@ -23,6 +23,8 @@ st.set_page_config(
 
 # --- Sidebar Configuration ---
 # Category Selection
+st.sidebar.title(":blue[AnoDe]")
+
 category = st.sidebar.selectbox(
     "Choose Category", 
     list(config.ALL_CATEGORIES.keys()),
