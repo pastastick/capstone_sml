@@ -15,7 +15,7 @@ connection_pool = None
 def init_db_pool():
     global connection_pool
     if connection_pool is None:
-        connection_string = os.getenv('DATABASE_URL')
+        connection_string = os.getenv('NEON_URL')
         connection_pool = pool.SimpleConnectionPool(
             2, 20, connection_string
         )

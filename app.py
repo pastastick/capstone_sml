@@ -304,7 +304,7 @@ def convert_image_data(image_data):
         return bytes(image_data)
     return image_data
 
-with st.expander("🖼️ Output Gallery: Recently Processed Images", expanded=True):
+with st.expander("🖼️ Output Gallery: Recently Processed Images", expanded=False):
     unique_categories = NeonDatabase.get_unique_categories()
     
     # Create tabs only if there are categories in the database
@@ -329,7 +329,7 @@ with st.expander("🖼️ Output Gallery: Recently Processed Images", expanded=T
                             st.image(
                                 convert_image_data(image_data),
                                 caption=f"{name} (Score: {score:.4f})",
-                                use_container_width=True
+                                width=250
                             )
                     else:
                         st.info(f"No 'Normal' images found for the '{category}' category in the database.")
@@ -346,7 +346,7 @@ with st.expander("🖼️ Output Gallery: Recently Processed Images", expanded=T
                             st.image(
                                 convert_image_data(image_data),
                                 caption=f"{name} (Score: {score:.4f})",
-                                use_container_width=True
+                                width=250
                             )
                     else:
                         st.info(f"No 'Anomaly' images found for the '{category}' category in the database.")
