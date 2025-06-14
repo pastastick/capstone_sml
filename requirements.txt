@@ -17,3 +17,4 @@ Authlib
 torch-summary
 psycopg2-binary
 python-dotenv
+tornado
